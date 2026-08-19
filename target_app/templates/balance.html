@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Balance — {{ member.member_id }} — CoreBank Back Office{% endblock %}
 {% block content %}
-<div class="section-title">Savings Account Balance</div>
+<div class="section-title">{{ savings.type if savings else "Account" }} Balance</div>
 <table class="form-table">
   <tr><td>Member</td><td>{{ member.name }}</td></tr>
   <tr><td>Member ID</td><td>{{ member.member_id }}</td></tr>

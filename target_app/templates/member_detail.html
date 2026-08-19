@@ -21,7 +21,7 @@
     <td>{{ account.type }}</td>
     <td>{{ account.number }}</td>
     <td>${{ "%.2f"|format(account.balance) }}</td>
-    <td><a href="/member/{{ member.member_id }}/balance">View Balance</a></td>
+    <td><a href="/member/{{ member.member_id }}/balance?type={{ account.type }}">View Balance</a></td>
   </tr>
   {% endfor %}
 </table>

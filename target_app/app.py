@@ -76,8 +76,9 @@ def view_balance(member_id):
     member = MEMBERS.get(member_id)
     if not member:
         return redirect(url_for("not_found", member_id=member_id))
+    account_type = request.args.get("type", "Savings")
     savings = next(
-        (a for a in member["accounts"] if a["type"] == "Savings"), None
+        (a for a in member["accounts"] if a["type"] == account_type), None
     )
     return render_template("balance.html", member=member, savings=savings, now=date.today().isoformat())
 
