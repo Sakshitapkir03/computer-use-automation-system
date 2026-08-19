@@ -17,6 +17,7 @@ import json
 import sys
 import time
 import threading
+import uuid
 from pathlib import Path
 
 import requests
@@ -24,6 +25,7 @@ from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from artifact.evidence import EvidenceWriter
 from artifact.schema import (
     Capability, Checkpoint, Locator, OutputSpec, ParamSpec, Step,
 )
@@ -165,6 +167,10 @@ def main() -> None:
     params = {"member_id": "12345"}
     outputs: dict[str, str] = {}  # populated by replay as steps execute
 
+    run_id = f"escalation_{uuid.uuid4().hex[:8]}"
+    writer = EvidenceWriter(run_id, "replay")
+    writer.configure(cap, params, outputs)
+
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
@@ -189,6 +195,7 @@ def main() -> None:
             cap, params, page,
             auto_confirm=False,
             session=session,
+            writer=writer,
         )
 
         sim.join(timeout=10)
@@ -201,17 +208,13 @@ def main() -> None:
     safe_result = redact(result.model_dump_json(indent=2), sensitive_values=sensitive)
     print(safe_result)
 
+    print(f"\nEvidence → {writer.path}")
+
     print("\n" + "=" * 60)
-    print("EVIDENCE TRAIL")
+    print("EVIDENCE TRAIL (raw JSONL)")
     print("=" * 60)
-    for entry in session.evidence:
-        # Redact the entire entry before printing.
-        safe_entry = redact(
-            json.dumps(entry, indent=2),
-            sensitive_values=collect_sensitive_values(cap, params, result.outputs or {}),
-        )
-        print(safe_entry)
-        print()
+    for line in writer.path.read_text().splitlines():
+        print(line)
 
 
 if __name__ == "__main__":
