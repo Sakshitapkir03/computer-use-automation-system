@@ -62,6 +62,10 @@ class LocatorResolutionError(ActionError):
     """Every strategy in the Locator fallback chain failed to match a live element."""
 
 
+class AmbiguousLocatorError(LocatorResolutionError):
+    """A locator strategy matched more than one element; expected exactly 1."""
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -110,9 +114,12 @@ def resolve_locator(
     3-deep chain at the default probe) before raising, silently eating into the
     discovery loop's wall-clock budget in a way that looks like normal latency.
 
-    Uses .first throughout so a strategy that matches multiple elements
-    (e.g. bare role_name with no name) resolves deterministically to the
-    first match rather than raising an ambiguity error.
+    Raises AmbiguousLocatorError (a subclass of LocatorResolutionError) if
+    every strategy in the chain either found zero elements or found more than
+    one — and at least one strategy found multiple.  This is distinguishable
+    from a plain not-found failure in evidence (the message starts with
+    AMBIGUOUS_TARGET).  An ambiguous primary falls through to the next
+    fallback strategy before concluding failure.
 
     Raises LocatorResolutionError if every strategy is exhausted or the
     aggregate deadline is exceeded before any strategy matches.
@@ -120,6 +127,8 @@ def resolve_locator(
     deadline = time.monotonic() + total_ms / 1000.0
     current: CapLocator | None = loc
     tried: list[str] = []
+    any_ambiguous: bool = False
+    last_ambiguous_msg: str = ""
     while current is not None:
         remaining_ms = int((deadline - time.monotonic()) * 1000)
         if remaining_ms <= 0:
@@ -130,10 +139,24 @@ def resolve_locator(
             pw_loc.first.wait_for(
                 state="attached", timeout=min(probe_ms, remaining_ms)
             )
-            return pw_loc
+            count = pw_loc.count()
+            if count == 1:
+                return pw_loc
+            # count > 1 — ambiguous; fall through to next fallback strategy.
+            any_ambiguous = True
+            last_ambiguous_msg = (
+                f"AMBIGUOUS_TARGET: {count} elements matched "
+                f"{current.strategy}:{current.value!r}, expected exactly 1"
+            )
+            tried.append(last_ambiguous_msg)
+            current = current.fallback
         except (PWTimeout, Exception):
             tried.append(f"{current.strategy}:{current.value!r}")
             current = current.fallback
+    if any_ambiguous:
+        raise AmbiguousLocatorError(
+            f"{last_ambiguous_msg}. All tried (in order): {tried}"
+        )
     raise LocatorResolutionError(
         f"No locator strategy resolved. Tried (in order): {tried}"
     )

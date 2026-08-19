@@ -36,6 +36,7 @@ Evidence (Phase 7):
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 from playwright.sync_api import Page
@@ -43,6 +44,7 @@ from playwright.sync_api import Page
 from agent.actions import (
     ActionError,
     AllowlistDenied,
+    AmbiguousLocatorError,
     LocatorResolutionError,
     do_click,
     do_navigate,
@@ -139,6 +141,82 @@ def _check_business_outcomes(
 
 
 # ---------------------------------------------------------------------------
+# Input validation
+# ---------------------------------------------------------------------------
+
+def validate_params(capability: Capability, params: dict[str, str]) -> str | None:
+    """
+    Returns None if params satisfy the capability's declared inputs, or a
+    human-readable error string describing the first failure found.
+
+    Checks (in order):
+      1. All required params are present.
+      2. No extra params exist that are not declared in capability.inputs.
+      3. Each provided value is coercible to its declared type.
+    """
+    for name, spec in capability.inputs.items():
+        if spec.required and name not in params:
+            return (
+                f"Missing required param {name!r} "
+                f"(type={spec.type}, declared in capability inputs)"
+            )
+
+    for name in params:
+        if name not in capability.inputs:
+            return (
+                f"Unexpected param {name!r} — not declared in capability inputs. "
+                f"Declared: {list(capability.inputs)}"
+            )
+
+    for name, value in params.items():
+        if name not in capability.inputs:
+            continue
+        spec = capability.inputs[name]
+        if spec.type == "str":
+            pass
+        elif spec.type == "int":
+            try:
+                int(value)
+            except (ValueError, TypeError):
+                return f"Param {name!r}={value!r} cannot be coerced to int"
+        elif spec.type == "decimal":
+            try:
+                Decimal(value)
+            except (InvalidOperation, Exception):
+                return f"Param {name!r}={value!r} cannot be coerced to decimal"
+        elif spec.type == "bool":
+            if value.lower() not in ("true", "false", "1", "0"):
+                return (
+                    f"Param {name!r}={value!r} cannot be coerced to bool "
+                    f"(expected one of: true, false, 1, 0)"
+                )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Failure evidence helpers
+# ---------------------------------------------------------------------------
+
+def _capture_failure_screenshot(page: Page, writer: "EvidenceWriter | None") -> str | None:
+    """
+    Capture a PNG screenshot and write it to evidence/<run_id>/failure_screenshot.png.
+    Returns the absolute path string, or None if writer is absent or capture fails.
+
+    WARNING: Screenshots are NOT text-redacted — they may contain PII rendered as
+    image pixels.  See REPORT.md §6 (Safety) for the accepted-risk disclosure.
+    """
+    if writer is None:
+        return None
+    try:
+        png_bytes = page.screenshot()
+        path = writer.path.parent / "failure_screenshot.png"
+        path.write_bytes(png_bytes)
+        return str(path)
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -175,18 +253,33 @@ def run_replay(
         if writer is not None:
             writer.log(event)
 
+    # Validate params before touching the browser.
+    _param_error = validate_params(capability, params)
+    if _param_error is not None:
+        result = ReplayResult(
+            status="hard_failure",
+            outputs=outputs,
+            failure_step_index=None,
+            failure_expected="valid params matching capability inputs",
+            failure_observed=_param_error,
+        )
+        _log({"event": "result", **result.model_dump()})
+        return result
+
     # Initial navigation to the capability's starting URL.
     try:
         do_navigate(page, base_url)
         _log({"event": "navigate", "action": "navigate",
               "url": base_url, "performed_by": "agent", "result": "ok"})
     except (ActionError, AllowlistDenied, Exception) as exc:
+        _screenshot = _capture_failure_screenshot(page, writer)
         result = ReplayResult(
             status="hard_failure",
             outputs=outputs,
             failure_step_index=-1,
             failure_expected=f"navigate to {base_url!r}",
             failure_observed=str(exc),
+            screenshot_path=_screenshot,
         )
         _log({"event": "result", **result.model_dump()})
         return result
@@ -219,6 +312,7 @@ def run_replay(
                       "performed_by": "agent"})
                 # Fall through: execute the step now that the human confirmed.
             else:
+                _screenshot = _capture_failure_screenshot(page, writer)
                 result = ReplayResult(
                     status="hard_failure",
                     outputs=outputs,
@@ -229,6 +323,7 @@ def run_replay(
                         f"reversible=False but auto_confirm=False. "
                         f"Re-run with auto_confirm=True to proceed past this gate."
                     ),
+                    screenshot_path=_screenshot,
                 )
                 _log({"event": "result", **result.model_dump()})
                 return result
@@ -279,12 +374,14 @@ def run_replay(
 
         except AllowlistDenied as exc:
             # Allowlist denial is a configuration failure, not a business outcome.
+            _screenshot = _capture_failure_screenshot(page, writer)
             result = ReplayResult(
                 status="hard_failure",
                 outputs=outputs,
                 failure_step_index=step.index,
                 failure_expected=f"step {step.index} ({step.action!r}) to be allowed",
                 failure_observed=f"AllowlistDenied: {exc}",
+                screenshot_path=_screenshot,
             )
             _log({"event": "step", "step_index": step.index, "action": step.action,
                   "performed_by": "agent", "result": "error",
@@ -303,12 +400,14 @@ def run_replay(
             if bo is not None:
                 _log({"event": "result", **bo.model_dump()})
                 return bo
+            _screenshot = _capture_failure_screenshot(page, writer)
             result = ReplayResult(
                 status="hard_failure",
                 outputs=outputs,
                 failure_step_index=step.index,
                 failure_expected=f"step {step.index} ({step.action!r}) to succeed",
                 failure_observed=f"{type(exc).__name__}: {exc}",
+                screenshot_path=_screenshot,
             )
             _log({"event": "result", **result.model_dump()})
             return result
@@ -330,6 +429,7 @@ def run_replay(
         _log({"event": "result", **bo.model_dump()})
         return bo
 
+    _screenshot = _capture_failure_screenshot(page, writer)
     result = ReplayResult(
         status="hard_failure",
         outputs=outputs,
@@ -339,6 +439,7 @@ def run_replay(
             f"with {capability.checkpoint.expected!r}"
         ),
         failure_observed=observed,
+        screenshot_path=_screenshot,
     )
     _log({"event": "result", **result.model_dump()})
     return result

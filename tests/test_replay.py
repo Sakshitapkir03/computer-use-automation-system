@@ -6,10 +6,13 @@ The live-replay integration test lives in tests/run_replay_test.py.
 """
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from agent.actions import AmbiguousLocatorError, LocatorResolutionError, resolve_locator
 from artifact.schema import (
     BusinessOutcomeSpec,
     Capability,
@@ -20,7 +23,7 @@ from artifact.schema import (
     ReplayResult,
     Step,
 )
-from replay.executor import _resolve, _verify_checkpoint, run_replay
+from replay.executor import _resolve, _verify_checkpoint, run_replay, validate_params
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +66,7 @@ def _cap(
         name="test_cap",
         goal="test",
         target={"base_url": base_url},
-        inputs={"member_id": ParamSpec(type="str", description="id")},
+        inputs={"member_id": ParamSpec(type="str", required=False, description="id")},
         outputs=outputs or {},
         steps=steps,
         checkpoint=checkpoint,
@@ -493,3 +496,251 @@ class TestAutoConfirmGate:
             result = run_replay(cap, {}, _mock_page(), auto_confirm=False)
         assert result.status == "hard_failure"
         mock_click.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: screenshot captured on hard_failure, not on success/business_outcome
+# ---------------------------------------------------------------------------
+
+class TestHardFailureScreenshot:
+    @patch(_PATCH.format("do_navigate"))
+    @patch(_PATCH.format("do_click"))
+    def test_screenshot_captured_on_step_failure(self, mock_click, mock_nav):
+        mock_click.side_effect = LocatorResolutionError("button not found")
+        steps = [Step(index=0, action="click", locator=_LOC, reversible=True)]
+        cap = _cap(steps)
+        page = _mock_page()
+        page.screenshot.return_value = b"\x89PNG\r\n"
+
+        writer = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            writer.path.parent = Path(tmpdir)
+            result = run_replay(cap, {}, page, writer=writer)
+            assert result.status == "hard_failure"
+            assert result.screenshot_path is not None
+            page.screenshot.assert_called_once()
+            assert Path(result.screenshot_path).read_bytes() == b"\x89PNG\r\n"
+
+    @patch(_PATCH.format("do_navigate"))
+    def test_screenshot_captured_on_checkpoint_failure(self, mock_nav):
+        cap = _cap(steps=[], checkpoint=_URL_CHECKPOINT)
+        page = _mock_page("http://localhost:5001/broken")
+        page.screenshot.return_value = b"\x89PNG\r\n"
+
+        writer = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            writer.path.parent = Path(tmpdir)
+            result = run_replay(cap, {}, page, writer=writer)
+
+        assert result.status == "hard_failure"
+        assert result.screenshot_path is not None
+        page.screenshot.assert_called_once()
+
+    @patch(_PATCH.format("do_navigate"))
+    @patch(_PATCH.format("do_click"))
+    def test_screenshot_not_captured_on_success(self, mock_click, mock_nav):
+        steps = [Step(index=0, action="click", locator=_LOC, reversible=True)]
+        cap = _cap(steps, checkpoint=_URL_CHECKPOINT)
+        page = _mock_page("http://localhost:5001/member/12345")
+
+        writer = MagicMock()
+        result = run_replay(cap, {}, page, writer=writer)
+
+        assert result.status == "success"
+        assert result.screenshot_path is None
+        page.screenshot.assert_not_called()
+
+    @patch(_PATCH.format("do_navigate"))
+    def test_screenshot_not_captured_on_business_outcome(self, mock_nav):
+        cap = _cap(
+            steps=[],
+            checkpoint=_URL_CHECKPOINT,
+            business_outcomes=[_NOT_FOUND_SPEC],
+        )
+        page = _mock_page("http://localhost:5001/not-found")
+
+        writer = MagicMock()
+        result = run_replay(cap, {}, page, writer=writer)
+
+        assert result.status == "business_outcome"
+        assert result.screenshot_path is None
+        page.screenshot.assert_not_called()
+
+    @patch(_PATCH.format("do_navigate"))
+    def test_screenshot_path_null_without_writer(self, mock_nav):
+        cap = _cap(steps=[], checkpoint=_URL_CHECKPOINT)
+        page = _mock_page("http://localhost:5001/broken")
+        result = run_replay(cap, {}, page)
+        assert result.status == "hard_failure"
+        assert result.screenshot_path is None
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: AmbiguousLocatorError — count check in resolve_locator
+# ---------------------------------------------------------------------------
+
+class TestAmbiguousLocator:
+    def test_ambiguous_error_is_subclass_of_locator_resolution_error(self):
+        assert issubclass(AmbiguousLocatorError, LocatorResolutionError)
+
+    def test_exact_single_match_returns_normally(self):
+        page = MagicMock()
+        pw = MagicMock()
+        pw.first.wait_for.return_value = None
+        pw.count.return_value = 1
+        loc = Locator(strategy="css_fallback", value=".btn")
+        with patch("agent.actions._build_pw_locator", return_value=pw):
+            result = resolve_locator(page, loc)
+        assert result is pw
+
+    def test_ambiguous_primary_falls_through_to_unambiguous_fallback(self):
+        page = MagicMock()
+        primary_pw = MagicMock()
+        primary_pw.first.wait_for.return_value = None
+        primary_pw.count.return_value = 3
+
+        fallback_pw = MagicMock()
+        fallback_pw.first.wait_for.return_value = None
+        fallback_pw.count.return_value = 1
+
+        loc = Locator(
+            strategy="css_fallback", value=".btn",
+            fallback=Locator(strategy="role_name", value="Search", role="button"),
+        )
+        with patch("agent.actions._build_pw_locator", side_effect=[primary_pw, fallback_pw]):
+            result = resolve_locator(page, loc)
+        assert result is fallback_pw
+
+    def test_all_strategies_ambiguous_raises_ambiguous_error(self):
+        page = MagicMock()
+        pw1 = MagicMock()
+        pw1.first.wait_for.return_value = None
+        pw1.count.return_value = 3
+
+        pw2 = MagicMock()
+        pw2.first.wait_for.return_value = None
+        pw2.count.return_value = 2
+
+        loc = Locator(
+            strategy="css_fallback", value=".btn",
+            fallback=Locator(strategy="role_name", value="", role="button"),
+        )
+        with patch("agent.actions._build_pw_locator", side_effect=[pw1, pw2]):
+            with pytest.raises(AmbiguousLocatorError) as exc_info:
+                resolve_locator(page, loc)
+        assert "AMBIGUOUS_TARGET" in str(exc_info.value)
+        assert "3" in str(exc_info.value)
+
+    def test_ambiguous_error_message_contains_strategy_count_and_value(self):
+        page = MagicMock()
+        pw = MagicMock()
+        pw.first.wait_for.return_value = None
+        pw.count.return_value = 5
+        loc = Locator(strategy="css_fallback", value=".nav-link")
+        with patch("agent.actions._build_pw_locator", return_value=pw):
+            with pytest.raises(AmbiguousLocatorError) as exc_info:
+                resolve_locator(page, loc)
+        msg = str(exc_info.value)
+        assert "AMBIGUOUS_TARGET" in msg
+        assert "5" in msg
+        assert "css_fallback" in msg
+        assert ".nav-link" in msg
+
+    def test_zero_match_still_raises_locator_resolution_error_not_ambiguous(self):
+        from playwright.sync_api import TimeoutError as PWTimeout
+        page = MagicMock()
+        pw = MagicMock()
+        pw.first.wait_for.side_effect = PWTimeout("timeout")
+        loc = Locator(strategy="css_fallback", value=".missing")
+        with patch("agent.actions._build_pw_locator", return_value=pw):
+            with pytest.raises(LocatorResolutionError) as exc_info:
+                resolve_locator(page, loc)
+        assert not isinstance(exc_info.value, AmbiguousLocatorError)
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: validate_params — input validation before browser interaction
+# ---------------------------------------------------------------------------
+
+def _cap_with_inputs(**input_specs) -> Capability:
+    """Build a capability with arbitrary input specs for validate_params tests."""
+    return Capability(
+        id="test_vp", version=1, name="test_vp", goal="test",
+        target={"base_url": "http://localhost:5001/search"},
+        inputs=input_specs,
+        outputs={}, steps=[],
+        checkpoint=Checkpoint(kind="url_matches", expected="/"),
+        created_from_run_id="test_vp",
+    )
+
+
+class TestValidateParams:
+    def test_valid_required_str_param(self):
+        cap = _cap_with_inputs(mid=ParamSpec(type="str", required=True, description="id"))
+        assert validate_params(cap, {"mid": "12345"}) is None
+
+    def test_missing_required_param(self):
+        cap = _cap_with_inputs(mid=ParamSpec(type="str", required=True, description="id"))
+        error = validate_params(cap, {})
+        assert error is not None
+        assert "mid" in error
+
+    def test_optional_param_may_be_absent(self):
+        cap = _cap_with_inputs(tag=ParamSpec(type="str", required=False, description="tag"))
+        assert validate_params(cap, {}) is None
+
+    def test_unexpected_param_rejected(self):
+        cap = _cap_with_inputs(mid=ParamSpec(type="str", required=True, description="id"))
+        error = validate_params(cap, {"mid": "123", "extra": "oops"})
+        assert error is not None
+        assert "extra" in error
+
+    def test_int_type_valid(self):
+        cap = _cap_with_inputs(count=ParamSpec(type="int", description="count"))
+        assert validate_params(cap, {"count": "42"}) is None
+
+    def test_int_type_invalid(self):
+        cap = _cap_with_inputs(count=ParamSpec(type="int", description="count"))
+        error = validate_params(cap, {"count": "not_a_number"})
+        assert error is not None
+        assert "int" in error
+
+    def test_decimal_type_valid(self):
+        cap = _cap_with_inputs(amt=ParamSpec(type="decimal", description="amount"))
+        assert validate_params(cap, {"amt": "123.45"}) is None
+
+    def test_decimal_type_invalid(self):
+        cap = _cap_with_inputs(amt=ParamSpec(type="decimal", description="amount"))
+        error = validate_params(cap, {"amt": "not_decimal"})
+        assert error is not None
+        assert "decimal" in error
+
+    def test_bool_type_valid_values(self):
+        cap = _cap_with_inputs(flag=ParamSpec(type="bool", description="flag"))
+        for v in ("true", "false", "1", "0"):
+            assert validate_params(cap, {"flag": v}) is None
+
+    def test_bool_type_invalid(self):
+        cap = _cap_with_inputs(flag=ParamSpec(type="bool", description="flag"))
+        error = validate_params(cap, {"flag": "yes"})
+        assert error is not None
+        assert "bool" in error
+
+    @patch(_PATCH.format("do_navigate"))
+    def test_validation_failure_returns_hard_failure_without_browser_touch(self, mock_nav):
+        cap = _cap_with_inputs(mid=ParamSpec(type="str", required=True, description="id"))
+        page = _mock_page()
+        result = run_replay(cap, {}, page)
+        assert result.status == "hard_failure"
+        assert result.failure_step_index is None
+        assert "mid" in result.failure_observed
+        mock_nav.assert_not_called()
+
+    @patch(_PATCH.format("do_navigate"))
+    def test_unexpected_param_returns_hard_failure_without_browser_touch(self, mock_nav):
+        cap = _cap_with_inputs(mid=ParamSpec(type="str", required=True, description="id"))
+        page = _mock_page()
+        result = run_replay(cap, {"mid": "x", "surprise": "boom"}, page)
+        assert result.status == "hard_failure"
+        assert "surprise" in result.failure_observed
+        mock_nav.assert_not_called()

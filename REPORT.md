@@ -126,6 +126,41 @@ returning `hard_failure`.  This catches the common pattern where an
 application redirects to a known error page mid-flow, breaking a
 subsequent locator resolution.
 
+**Input validation** (`validate_params` in `replay/executor.py`) — called
+at the very start of `run_replay`, before any browser interaction.  Checks
+(in order): every `ParamSpec` with `required=True` has a key in `params`;
+no extra keys exist that are not declared in `capability.inputs`; each
+provided value is coercible to its declared type (`int`, `decimal`, `bool`,
+or `str`).  On failure, returns `hard_failure` immediately with
+`failure_step_index: null` and a clear `failure_observed` message — no
+browser navigation is attempted and no `page` method is called.
+
+**Ambiguous locator detection** (`AmbiguousLocatorError` in
+`agent/actions.py`) — after `resolve_locator` confirms an element is
+attached (`wait_for(state="attached")`), it calls `pw_loc.count()`.  If
+`count == 1` the locator is returned as before.  If `count > 1` the
+strategy is ambiguous and falls through to the next fallback strategy in
+the chain rather than silently acting on whichever element Playwright
+returns first.  Only if every strategy in the chain is either zero-match or
+multi-match does the function raise `AmbiguousLocatorError` (a subclass of
+`LocatorResolutionError` so existing `except LocatorResolutionError`
+handlers in `run_replay` and `with_recoverable_retry` catch it without
+changes).  The error message always starts with `AMBIGUOUS_TARGET: N
+elements matched <strategy>:<value>, expected exactly 1`, making it
+distinguishable from a plain not-found failure in the evidence JSONL.
+
+**Hard-failure screenshot** — whenever `run_replay` returns
+`status="hard_failure"` (step exception, checkpoint failure, allowlist
+denial, or irreversible gate), it calls `page.screenshot()` and writes the
+PNG bytes to `evidence/<run_id>/failure_screenshot.png` via the
+`EvidenceWriter`'s evidence directory.  `ReplayResult.screenshot_path` is
+set to the absolute path string so callers and evidence readers can locate
+the file.  Screenshots are not captured on `success` or `business_outcome`
+to avoid bloat on the common paths.  They are also not captured on the
+validate-params failure path, where the browser has not yet been touched.
+See §6 (Safety) for the accepted unmitigated risk that failure screenshots
+may contain PII rendered as image pixels.
+
 **Recoverable retry** (`replay/recoverable.py`) — distinct from both
 `hard_failure` and the Locator fallback chain.  The Locator fallback
 chain (`resolve_locator`) retries across *targeting strategies* for a
@@ -290,24 +325,29 @@ an automated run that has diverged from expected state.
 
 ### Screenshot redaction — accepted risk
 
-`redact()` operates on text only.  A screenshot captured at the moment of
-an escalation pause may contain PII (member name, balance, account number,
-session tokens) rendered as image pixels.  This is currently unmitigated
-for the following reasons:
+`redact()` operates on text only.  Screenshots may contain PII (member
+name, balance, account number, session tokens) rendered as image pixels.
+This is unmitigated.  Two screenshot mechanisms are in use, with different
+persistence behaviour:
 
-- Screenshots are never written to disk in Phase 6.  They exist only in
-  `SessionController._screenshot_bytes` and are served in-memory to the
-  operator console for the duration of the pause.
+**Escalation pause screenshots** — captured inside `SessionController.pause()`
+and held only in `_screenshot_bytes` for the duration of the pause.  Served
+in-memory to the operator console via `GET /screenshot`; never written to
+disk.  Risk is equivalent to a human operator looking directly at the
+browser window.
 
-- Any future decision to persist screenshots must be made explicitly.
-  Acceptable mitigations would include Playwright `mask=` for known
-  sensitive selectors (requires the capability schema to declare which
-  locators contain PII — a future extension), or storing screenshots in
-  an access-controlled location separate from text evidence with its own
-  retention policy.
+**Hard-failure screenshots** — captured by `_capture_failure_screenshot()`
+whenever `run_replay` returns `status="hard_failure"`.  These ARE written
+to disk at `evidence/<run_id>/failure_screenshot.png` and persist after the
+run completes.  The file sits alongside the JSONL evidence for that run and
+is referenced by `ReplayResult.screenshot_path`.
 
-- This risk is treated as equivalent to a human operator looking directly
-  at the browser window — which is the intent of the escalation feature.
+Acceptable mitigations for both (not yet implemented):
+- Playwright `mask=` for known sensitive selectors (requires the capability
+  schema to declare which locators contain PII).
+- Access-controlled storage for the `evidence/` directory, separate from
+  log aggregation pipelines that expect only text.
+- Per-run retention policies that delete screenshots after a defined TTL.
 
 ---
 
