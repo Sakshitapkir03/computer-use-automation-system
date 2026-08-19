@@ -34,7 +34,8 @@ rpa-agent/
 │   ├── test_*.py           # 147 unit tests (no browser required)
 │   ├── run_discovery_test.py   # Live discovery demo
 │   ├── run_replay_test.py      # Live replay demo (3 scenarios)
-│   └── run_escalation_test.py  # Live escalation demo
+│   ├── run_escalation_test.py        # Escalation demo (simulated human)
+│   └── run_escalation_interactive.py # Escalation demo (real human, no time limit)
 ├── evidence/               # JSONL run logs (created at runtime)
 └── requirements.txt
 ```
@@ -188,18 +189,47 @@ for line in sys.stdin:
 ### 3 — Escalation (no API key required)
 
 Starts a replay that pauses at an irreversible step and launches the
-Flask operator console at `http://localhost:5002`.  Open that URL in a
-browser during the pause to inspect page state and submit actions.
+Flask operator console at `http://localhost:5002`.
+
+There are two variants:
+
+**Automated verification** — a simulator thread acts as the human operator
+and resumes in under a second.  Good for CI or confirming the mechanism
+works end-to-end without manual interaction.
 
 ```bash
 .venv/bin/python tests/run_escalation_test.py
 ```
 
-The console exposes:
-- `GET  /`           — Intervention summary (capability, step, reason)
-- `GET  /screenshot` — In-memory screenshot of the paused browser page
-- `POST /action`     — Submit a navigate / click / type action
-- `POST /resume`     — Release the agent thread to continue
+**Interactive** — no simulator.  The run blocks indefinitely at the
+irreversible gate, waiting for a real person to open the console, inspect
+the state, optionally submit manual actions, and click **Resume Agent**.
+Use this to actually exercise the UI.
+
+```bash
+.venv/bin/python tests/run_escalation_interactive.py
+```
+
+#### What the console shows
+
+When the run pauses, open `http://localhost:5002` in a browser.  The page
+renders in three parts: at the top, the **intervention payload** — capability
+name, goal, step index, and the reason the gate fired (e.g. "Step 0 is marked
+reversible=False and requires human confirmation").  Below that, an **embedded
+screenshot** of the browser at the exact moment automation paused, so the
+operator can see what the page looked like without switching to the headless
+browser.  At the bottom, a **manual-action form** (navigate / click / type)
+that lets the operator drive the live page from the console, followed by a
+**Resume Agent** button that unblocks the agent thread and lets replay
+continue from where it stopped.  Scroll down to reach the form and button —
+the screenshot can push them below the fold on smaller screens.
+
+#### Console API routes
+
+- `GET  /`           — Renders the intervention page described above
+- `GET  /screenshot` — Raw PNG bytes (served in-memory, never written to disk)
+- `POST /action`     — JSON `{"type": "navigate"|"click"|"type", ...}`
+- `POST /resume`     — Releases the agent thread; returns `{"ok": true}`
 
 ---
 
