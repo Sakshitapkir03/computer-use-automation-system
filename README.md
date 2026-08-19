@@ -188,7 +188,7 @@ for line in sys.stdin:
 ### 3 — Escalation (no API key required)
 
 Starts a replay that pauses at an irreversible step and launches the
-Flask operator console at `http://localhost:5050`.  Open that URL in a
+Flask operator console at `http://localhost:5002`.  Open that URL in a
 browser during the pause to inspect page state and submit actions.
 
 ```bash
