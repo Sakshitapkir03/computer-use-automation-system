@@ -105,7 +105,7 @@ goals and parameters at invocation time, separate from the fixed demo scripts.
     --base-url "http://localhost:5001/search" \
     --capability-name "lookup_member_balance" \
     --params '{"member_id": "12345"}' \
-    --model "gemini-3.5-flash"
+    --model "gemini-3.6-flash"
 ```
 
 `--param-specs` is optional; if omitted, every key in `--params` is inferred

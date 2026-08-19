@@ -48,7 +48,7 @@ def main() -> None:
                 params={"member_id": "12345"},
                 param_specs=param_specs,
                 max_steps=20,
-                model="gemini-3.5-flash",
+                model="gemini-3.6-flash",
             )
         except Exception as exc:
             print(f"\n=== DISCOVERY FAILED: {type(exc).__name__}: {exc} ===\n")
