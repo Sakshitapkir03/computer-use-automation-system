@@ -211,7 +211,7 @@ def _capture_failure_screenshot(page: Page, writer: "EvidenceWriter | None") -> 
         png_bytes = page.screenshot()
         path = writer.path.parent / "failure_screenshot.png"
         path.write_bytes(png_bytes)
-        return str(path)
+        return path.name
     except Exception:
         return None
 

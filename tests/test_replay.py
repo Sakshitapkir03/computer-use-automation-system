@@ -517,9 +517,9 @@ class TestHardFailureScreenshot:
             writer.path.parent = Path(tmpdir)
             result = run_replay(cap, {}, page, writer=writer)
             assert result.status == "hard_failure"
-            assert result.screenshot_path is not None
+            assert result.screenshot_path == "failure_screenshot.png"
             page.screenshot.assert_called_once()
-            assert Path(result.screenshot_path).read_bytes() == b"\x89PNG\r\n"
+            assert (Path(tmpdir) / result.screenshot_path).read_bytes() == b"\x89PNG\r\n"
 
     @patch(_PATCH.format("do_navigate"))
     def test_screenshot_captured_on_checkpoint_failure(self, mock_nav):
