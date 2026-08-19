@@ -137,9 +137,6 @@ def human_simulator(session: SessionController, params: dict, outputs: dict,
     print("\n" + "=" * 60)
     print("HUMAN OPERATOR: console is live, session is paused")
     print("=" * 60)
-    print(f"\n>>> Open {CONSOLE_BASE} in a browser now.")
-    print(">>> Simulator takes over in 15 s…")
-    time.sleep(15)
 
     # ── 1. Fetch intervention payload ─────────────────────────────────────
     r = requests.get(CONSOLE_BASE + "/payload")
