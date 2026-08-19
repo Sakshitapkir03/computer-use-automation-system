@@ -316,27 +316,26 @@ discovery or manually updating the artifact JSON.
 
 ### 7c. Business-outcome specs are per-capability and manually declared
 
-`BusinessOutcomeSpec` entries are attached to a `Capability` by the
-operator, not discovered automatically.  The `run_replay_test.py` demo
-attaches `MEMBER_NOT_FOUND` (checkpoint: `url_matches /not-found`)
-programmatically at test time rather than baking it into the artifact.
+`BusinessOutcomeSpec` entries must be declared by the operator; discovery
+does not automatically detect all possible exit states of a workflow.
+Non-success paths the LLM did not encounter during its recording run have
+no spec and fall through to `hard_failure`.
 
-This means:
-- A legitimate "field absent" failure — where the member exists but has
-  no savings account (scenario c in the demo) — is classified as
-  `hard_failure` rather than a named business outcome, because no
-  `BusinessOutcomeSpec` has been declared for that state.
+**`MEMBER_NOT_FOUND` is now baked into the artifact** —
+`artifact/store/lookup_member_balance_v1.json` carries the spec in its
+`business_outcomes` array (checkpoint: `url_matches /not-found`).
+`run_replay_test.py` loads the artifact as-is with no in-memory mutation;
+the `business_outcome` classification produced by scenario (b) is driven
+entirely by the artifact on disk, not by test-time patching.  This
+satisfies the "artifact is self-contained and reusable" premise.
 
-- Discovery cannot automatically detect all possible exit states of a
-  workflow.  Non-success paths that the LLM did not encounter during
-  discovery have no spec.
-
-**Mitigation not yet implemented:** A future discovery pass could be run
-with known edge-case inputs (member-with-no-savings, member-not-found,
-session-expired) to record the page state for each, then auto-generate
-`BusinessOutcomeSpec` entries from those observations.  For now, specs
-must be declared manually and the absence of a spec means any unrecognised
-failure state becomes `hard_failure`.
+The remaining gap is that the "member exists but has no Savings account"
+case (scenario c) still returns `hard_failure` — no `BusinessOutcomeSpec`
+has been declared for that state because the page does not navigate to a
+distinct URL; it stays on `/member/67890` with the Savings row simply
+absent.  A future `element_absent` checkpoint kind (not currently
+supported) would allow this to be named.  For now it is an explicit
+acknowledged gap: unrecognised failure states default to `hard_failure`.
 
 ### 7d. No per-tenant credential management or session isolation
 

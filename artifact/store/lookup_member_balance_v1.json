@@ -78,7 +78,17 @@
       "reversible": true
     }
   ],
-  "business_outcomes": [],
+  "business_outcomes": [
+    {
+      "outcome_code": "MEMBER_NOT_FOUND",
+      "outcome_message": "No member record exists for the requested ID.",
+      "checkpoint": {
+        "kind": "url_matches",
+        "locator": null,
+        "expected": "/not-found"
+      }
+    }
+  ],
   "checkpoint": {
     "kind": "text_present",
     "locator": {

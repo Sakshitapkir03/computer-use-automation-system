@@ -20,23 +20,15 @@ from playwright.sync_api import sync_playwright
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from artifact.evidence import EvidenceWriter
-from artifact.schema import BusinessOutcomeSpec, Capability, Checkpoint
+from artifact.schema import Capability
 from replay.executor import run_replay
 
 ARTIFACT_PATH = Path(__file__).parent.parent / "artifact" / "store" / "lookup_member_balance_v1.json"
 
-NOT_FOUND_SPEC = BusinessOutcomeSpec(
-    outcome_code="MEMBER_NOT_FOUND",
-    outcome_message="No member record exists for the requested ID.",
-    checkpoint=Checkpoint(kind="url_matches", expected="/not-found"),
-)
-
 
 def load_capability() -> Capability:
     raw = json.loads(ARTIFACT_PATH.read_text())
-    cap = Capability.model_validate(raw)
-    cap.business_outcomes = [NOT_FOUND_SPEC]
-    return cap
+    return Capability.model_validate(raw)
 
 
 def run_scenario(label: str, member_id: str, auto_confirm: bool = True) -> None:
