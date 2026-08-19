@@ -43,11 +43,15 @@ rpa-agent/
 
 ## Setup
 
-**Requirements:** Python ≥ 3.11, pip.
+**Requirements:** Python ≥ 3.11 (the codebase uses `X | Y` union syntax from
+Python 3.10+ in Pydantic models — Python 3.9 will fail at import time).
+`python3 --version` must show 3.11 or higher before running the commands below.
+On macOS the system `python3` is typically 3.9; use `python3.11`, `python3.12`,
+or `python3.13` explicitly.
 
 ```bash
-# 1. Create and activate a virtual environment
-python3 -m venv .venv
+# 1. Create and activate a virtual environment (Python 3.11+ required)
+python3.13 -m venv .venv           # adjust to python3.11 / python3.12 as available
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 
 # 2. Install Python dependencies
