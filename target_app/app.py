@@ -6,7 +6,7 @@ Used as the automation target in the take-home assignment.
 """
 import time
 from datetime import date
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, Response, render_template, request, redirect, url_for, session
 
 app = Flask(__name__)
 app.secret_key = "mock-secret-not-for-prod"
@@ -164,9 +164,22 @@ def not_found():
 
 @app.route("/reports/slow-summary")
 def slow_summary():
-    """Simulates a slow back-end call — used to exercise bounded wait/retry."""
-    time.sleep(4)
-    return render_template("slow_summary.html")
+    """Simulates a slow back-end call — used to exercise bounded wait/retry.
+
+    Streams an initial byte immediately so the browser commits to the navigation
+    (HTTP headers received) before the 4-second artificial delay fires.  This
+    lets page.goto(wait_until="commit") return while the DOM is still empty,
+    giving the recoverable-retry loop a chance to exercise real transient
+    failures before the content eventually arrives.
+    """
+    content = render_template("slow_summary.html")
+
+    def generate():
+        yield b" "          # flush HTTP headers; browser commits navigation
+        time.sleep(4)       # artificial back-end delay
+        yield content.encode()
+
+    return Response(generate(), content_type="text/html; charset=utf-8")
 
 
 @app.route("/health")

@@ -126,6 +126,41 @@ returning `hard_failure`.  This catches the common pattern where an
 application redirects to a known error page mid-flow, breaking a
 subsequent locator resolution.
 
+**Recoverable retry** (`replay/recoverable.py`) — distinct from both
+`hard_failure` and the Locator fallback chain.  The Locator fallback
+chain (`resolve_locator`) retries across *targeting strategies* for a
+single attempt; the recoverable-retry wrapper retries the entire
+action-dispatch call across *time*, to handle transient conditions such
+as pages that are still loading when the first attempt runs.
+
+| Parameter | Value |
+|-----------|-------|
+| `RECOVERABLE_MAX_ATTEMPTS` | 3 |
+| `RECOVERABLE_BACKOFF_S` | `[1.0, 2.0, 4.0]` — sleep before attempt 2, 3, 4 respectively |
+| Applies to | `click`, `type`, `read`, `wait_for` (any action that resolves a `Locator`) |
+| Excluded | `navigate` (no `Locator` involved) |
+
+`with_recoverable_retry(fn, log_fn)` calls `fn()` up to
+`RECOVERABLE_MAX_ATTEMPTS` times.  Each `LocatorResolutionError` before
+the final attempt is logged as a `recoverable_retry` event (fields:
+`attempt`, `backoff_s`, `error`) and followed by the corresponding
+sleep.  After all attempts are exhausted the final
+`LocatorResolutionError` is re-raised so the existing business-outcome
+check / `hard_failure` fallthrough in `run_replay` handles it unchanged.
+Steps that succeed on the first attempt pay only a function-call
+overhead — no logging, no sleeping.
+
+**Evidenced** — `evidence/recoverable_*/steps.jsonl` records a real run
+against `/reports/slow-summary` (a ~4 s artificial-delay endpoint in the
+target app, modified to stream HTTP headers immediately so
+`page.goto(wait_until="commit")` returns before the DOM is built).
+Attempt 1 raises `LocatorResolutionError` after a 2 s probe window;
+attempt 2 succeeds once the body arrives (~4 s from navigation start).
+The `recoverable_retry` event at seq 1 proves the retry actually fired
+and was not speculative.
+
+**Known interstitial dismissal** is not built — see §7f.
+
 ---
 
 ## 4. Heterogeneity and multi-tenant
@@ -354,3 +389,23 @@ navigation performed.  A production entrypoint should validate the model ID
 against the API's model list (or a pinned allowlist) before opening the
 browser so that configuration errors are surfaced immediately with a clear
 message rather than mid-run after browser startup overhead.
+
+### 7f. Known interstitial dismissal not implemented
+
+`with_recoverable_retry` handles **transient locator failures** — cases
+where the element exists in principle but has not yet appeared in the DOM.
+It does not handle **known interstitials**: recognized banners, cookie
+consent dialogs, or session-expiry overlays that block the target element
+and must be actively dismissed before the underlying action can proceed.
+
+Addressing this would require a new `InterstitialSpec` schema field on
+`Capability` listing recognized dismissal locators (e.g. a "Close" button
+on a cookie banner), and a pre-step probe in the executor that checks each
+declared interstitial and dismisses it before attempting the real action.
+This is distinct from the retry loop: an interstitial does not resolve on
+its own with time — it requires a deliberate click to clear.
+
+Until this is built, any page that presents a known interstitial during
+replay will cause the underlying step's locator resolution to fail, fall
+through all retry attempts, and return `hard_failure` (or a matching
+`business_outcome` if one is declared).

@@ -52,6 +52,7 @@ from agent.actions import (
     resolve_locator,
 )
 from artifact.schema import Capability, Checkpoint, ReplayResult
+from replay.recoverable import with_recoverable_retry
 
 if TYPE_CHECKING:
     from artifact.evidence import EvidenceWriter
@@ -240,26 +241,38 @@ def run_replay(
                       "url": url, "performed_by": "agent", "result": "ok"})
 
             elif step.action == "click":
-                do_click(page, step.locator)
+                with_recoverable_retry(
+                    lambda: do_click(page, step.locator),
+                    lambda ev: _log({"step_index": step.index, "action": step.action, **ev}),
+                )
                 _log({"event": "step", "step_index": step.index, "action": "click",
                       "locator": step.locator.strategy + ":" + step.locator.value,
                       "performed_by": "agent", "result": "ok"})
 
             elif step.action == "type":
-                do_type(page, step.locator, _resolve(step.value, params))
+                with_recoverable_retry(
+                    lambda: do_type(page, step.locator, _resolve(step.value, params)),
+                    lambda ev: _log({"step_index": step.index, "action": step.action, **ev}),
+                )
                 _log({"event": "step", "step_index": step.index, "action": "type",
                       "locator": step.locator.strategy + ":" + step.locator.value,
                       "value_template": step.value,
                       "performed_by": "agent", "result": "ok"})
 
             elif step.action == "read":
-                outputs[step.output_key] = do_read(page, step.locator)
+                outputs[step.output_key] = with_recoverable_retry(
+                    lambda: do_read(page, step.locator),
+                    lambda ev: _log({"step_index": step.index, "action": step.action, **ev}),
+                )
                 _log({"event": "step", "step_index": step.index, "action": "read",
                       "output_key": step.output_key,
                       "performed_by": "agent", "result": "ok"})
 
             elif step.action == "wait_for":
-                do_wait_for(page, step.locator)
+                with_recoverable_retry(
+                    lambda: do_wait_for(page, step.locator),
+                    lambda ev: _log({"step_index": step.index, "action": step.action, **ev}),
+                )
                 _log({"event": "step", "step_index": step.index, "action": "wait_for",
                       "locator": step.locator.strategy + ":" + step.locator.value,
                       "performed_by": "agent", "result": "ok"})

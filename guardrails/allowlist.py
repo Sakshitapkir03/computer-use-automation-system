@@ -69,7 +69,7 @@ _ALL_ACTIONS = ("navigate", "click", "type", "read", "wait_for")
 
 _DEFAULT_ENTRIES: list[AllowlistEntry] = [
     AllowlistEntry(domain="localhost", route_prefix=route, action=act)
-    for route in ("/search", "/member/", "/not-found")
+    for route in ("/search", "/member/", "/not-found", "/reports/")
     for act in _ALL_ACTIONS
 ]
 
