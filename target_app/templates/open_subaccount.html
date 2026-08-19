@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Open Sub-Account — {{ member.member_id }} — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Open Sub-Account for {{ member.name }} ({{ member.member_id }})</div>
+{% if error %}
+  <p class="error">{{ error }}</p>
+{% endif %}
+<form method="POST">
+  <table class="form-table">
+    <tr>
+      <td>Account Type</td>
+      <td>
+        <select name="account_type">
+          <option value="">-- Select --</option>
+          {% for at in account_types %}
+          <option value="{{ at }}">{{ at }}</option>
+          {% endfor %}
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <td>Initial Deposit ($)</td>
+      <td><input type="text" name="initial_deposit" size="15" /></td>
+    </tr>
+    <tr>
+      <td>Purpose / Notes</td>
+      <td><input type="text" name="purpose" size="30" /></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td>
+        <button type="submit" class="btn">Continue to Review</button>
+        &nbsp;
+        <a href="/member/{{ member.member_id }}"><button type="button" class="btn">Cancel</button></a>
+      </td>
+    </tr>
+  </table>
+</form>
+{% endblock %}

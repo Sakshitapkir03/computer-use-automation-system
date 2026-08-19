@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Confirm Sub-Account — {{ member.member_id }} — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Confirm Sub-Account Opening</div>
+<p>Please review the details below before confirming.</p>
+<table class="form-table">
+  <tr><td>Member</td><td>{{ member.name }} ({{ member.member_id }})</td></tr>
+  <tr><td>Account Type</td><td>{{ pending.account_type }}</td></tr>
+  <tr><td>Initial Deposit</td><td>${{ pending.initial_deposit }}</td></tr>
+  <tr><td>Purpose</td><td>{{ pending.purpose or "—" }}</td></tr>
+</table>
+<br>
+<form method="POST">
+  <button type="submit" class="btn btn-danger">Confirm — Open Account</button>
+  &nbsp;
+  <a href="/member/{{ member.member_id }}/open-subaccount">
+    <button type="button" class="btn">Back / Edit</button>
+  </a>
+</form>
+{% endblock %}

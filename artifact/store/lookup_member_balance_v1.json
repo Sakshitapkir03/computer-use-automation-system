@@ -1,0 +1,99 @@
+{
+  "id": "disc_5c5386a7",
+  "version": 1,
+  "name": "lookup_member_balance",
+  "goal": "Search for a member by ID and read their savings account balance.",
+  "target": {
+    "base_url": "http://localhost:5001/search",
+    "app": "mock_core_banking"
+  },
+  "inputs": {
+    "member_id": {
+      "type": "str",
+      "required": true,
+      "sensitive": false,
+      "description": "Core-banking member ID to look up."
+    }
+  },
+  "outputs": {
+    "savings_balance": {
+      "type": "str",
+      "sensitive": false,
+      "description": "Savings account current balance"
+    }
+  },
+  "steps": [
+    {
+      "index": 0,
+      "action": "type",
+      "locator": {
+        "strategy": "css_fallback",
+        "value": "input[name='member_id']",
+        "role": null,
+        "fallback": {
+          "strategy": "role_name",
+          "value": "Member ID",
+          "role": "textbox",
+          "fallback": null
+        }
+      },
+      "value": "{member_id}",
+      "output_key": null,
+      "reversible": true
+    },
+    {
+      "index": 1,
+      "action": "click",
+      "locator": {
+        "strategy": "role_name",
+        "value": "Search",
+        "role": "button",
+        "fallback": {
+          "strategy": "css_fallback",
+          "value": "button[type='submit']",
+          "role": null,
+          "fallback": null
+        }
+      },
+      "value": null,
+      "output_key": null,
+      "reversible": true
+    },
+    {
+      "index": 2,
+      "action": "read",
+      "locator": {
+        "strategy": "xpath",
+        "value": "//tr[td[normalize-space()='Savings']]/td[3]",
+        "role": null,
+        "fallback": {
+          "strategy": "css_fallback",
+          "value": "tr:has(td:text-is(\"Savings\")) td:nth-child(3)",
+          "role": null,
+          "fallback": null
+        }
+      },
+      "value": null,
+      "output_key": "savings_balance",
+      "reversible": true
+    }
+  ],
+  "business_outcomes": [],
+  "checkpoint": {
+    "kind": "text_present",
+    "locator": {
+      "strategy": "text_exact",
+      "value": "Member Details",
+      "role": null,
+      "fallback": {
+        "strategy": "xpath",
+        "value": "//*[normalize-space()='Member Details']",
+        "role": null,
+        "fallback": null
+      }
+    },
+    "expected": "Member Details"
+  },
+  "created_from_run_id": "disc_5c5386a7",
+  "created_at": "2026-08-19T00:36:51.463287+00:00"
+}

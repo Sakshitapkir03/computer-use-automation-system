@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Member Search — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Member Search</div>
+{% if error %}
+  <p class="error">{{ error }}</p>
+{% endif %}
+<form method="POST" action="/search">
+  <table class="form-table">
+    <tr>
+      <td>Member ID</td>
+      <td><input type="text" name="member_id" size="20" /></td>
+    </tr>
+    <tr>
+      <td></td>
+      <td><button type="submit" class="btn">Search</button></td>
+    </tr>
+  </table>
+</form>
+{% endblock %}

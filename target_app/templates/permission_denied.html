@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Permission Denied — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Permission Denied</div>
+<p class="error">You do not have permission to open sub-accounts for member <strong>{{ member_id }}</strong>.</p>
+<p>This action requires Manager role. Please contact your system administrator.</p>
+<a href="/search"><button class="btn">Back to Search</button></a>
+{% endblock %}

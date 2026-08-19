@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Account Opened — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Sub-Account Successfully Opened</div>
+<p class="success">The account has been created.</p>
+<table class="form-table">
+  <tr><td>Member</td><td>{{ member.name }} ({{ member.member_id }})</td></tr>
+  <tr><td>Account Type</td><td>{{ account.type }}</td></tr>
+  <tr><td>Account Number</td><td>{{ account.number }}</td></tr>
+  <tr><td>Opening Balance</td><td>${{ "%.2f"|format(account.balance) }}</td></tr>
+</table>
+<br>
+<a href="/member/{{ member.member_id }}"><button class="btn">Back to Member</button></a>
+&nbsp;
+<a href="/search"><button class="btn">New Search</button></a>
+{% endblock %}

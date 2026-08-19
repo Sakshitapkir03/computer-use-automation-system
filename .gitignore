@@ -1,0 +1,18 @@
+# Credentials — never commit
+.env
+
+# Runtime evidence — JSONL run logs, per-run directories
+evidence/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# macOS
+.DS_Store

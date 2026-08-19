@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Balance — {{ member.member_id }} — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Savings Account Balance</div>
+<table class="form-table">
+  <tr><td>Member</td><td>{{ member.name }}</td></tr>
+  <tr><td>Member ID</td><td>{{ member.member_id }}</td></tr>
+</table>
+
+{% if savings %}
+<br>
+<table>
+  <tr>
+    <th>Account Type</th>
+    <th>Account Number</th>
+    <th>Current Balance</th>
+    <th>As Of</th>
+  </tr>
+  <tr>
+    <td>{{ savings.type }}</td>
+    <td>{{ savings.number }}</td>
+    <td class="balance">${{ "%.2f"|format(savings.balance) }}</td>
+    <td>{{ now }}</td>
+  </tr>
+</table>
+{% else %}
+<p>No savings account found for this member.</p>
+{% endif %}
+
+<br>
+<a href="/member/{{ member.member_id }}"><button class="btn">Back to Member</button></a>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Member Not Found — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Member Not Found</div>
+<p class="error">No member record was found for ID: <strong>{{ member_id }}</strong></p>
+<p>Please verify the Member ID and try again.</p>
+<a href="/search"><button class="btn">New Search</button></a>
+{% endblock %}

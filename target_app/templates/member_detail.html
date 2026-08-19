@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Member {{ member.member_id }} — CoreBank Back Office{% endblock %}
+{% block content %}
+<div class="section-title">Member Details</div>
+<table class="form-table">
+  <tr><td>Member ID</td><td>{{ member.member_id }}</td></tr>
+  <tr><td>Name</td><td>{{ member.name }}</td></tr>
+  <tr><td>Status</td><td>{{ member.status }}</td></tr>
+</table>
+
+<div class="section-title">Accounts</div>
+<table>
+  <tr>
+    <th>Account Type</th>
+    <th>Account Number</th>
+    <th>Current Balance</th>
+    <th>Actions</th>
+  </tr>
+  {% for account in member.accounts %}
+  <tr>
+    <td>{{ account.type }}</td>
+    <td>{{ account.number }}</td>
+    <td>${{ "%.2f"|format(account.balance) }}</td>
+    <td><a href="/member/{{ member.member_id }}/balance">View Balance</a></td>
+  </tr>
+  {% endfor %}
+</table>
+
+<br>
+<a href="/member/{{ member.member_id }}/open-subaccount"><button class="btn">Open Sub-Account</button></a>
+&nbsp;
+<a href="/search"><button class="btn">New Search</button></a>
+{% endblock %}
