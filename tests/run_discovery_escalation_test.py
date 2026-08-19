@@ -97,7 +97,7 @@ def main() -> None:
     escalated_once = False
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)  # headed — visible to the operator
+        browser = p.chromium.launch(headless=True)   # headless for CI/tool; set False locally to watch
         page = browser.new_page()
 
         session = SessionController(page)
