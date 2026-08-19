@@ -31,6 +31,7 @@ from __future__ import annotations
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -149,6 +150,19 @@ def main() -> None:
 
             session.pause(payload)  # blocks until human clicks Resume
 
+            # Append resume + any human console actions directly into the
+            # evidence list so log_all writes them in the correct seq order
+            # (after the stuck event, before any post-resume agent steps).
+            now = datetime.now(timezone.utc).isoformat()
+            evidence.append({
+                "type": "resume",
+                "step_index": step_index,
+                "performed_by": "agent",
+                "timestamp_iso": now,
+            })
+            for entry in session.evidence:
+                evidence.append({"type": "human_action", "timestamp_iso": now, **entry})
+
             print("\nHuman resumed. Discovery will continue (and likely fail again)…")
 
         print(f"\n{'='*60}")
@@ -158,6 +172,7 @@ def main() -> None:
         print(f"After {3} consecutive errors, auto-escalation fires.")
         print("=" * 60)
 
+        final_outcome: dict = {}
         try:
             result = run_discovery(
                 page=page,
@@ -178,13 +193,19 @@ def main() -> None:
             )
             # Unexpected success path (goal somehow completed).
             accumulated_evidence = result.evidence
+            final_outcome = {"event": "outcome", "status": "success",
+                             "artifact_path": str(result.artifact_path)}
             print(f"\nDiscovery completed — artifact: {result.artifact_path}")
 
         except DiscoveryError as exc:
+            final_outcome = {"event": "outcome", "status": type(exc).__name__,
+                             "reason": str(exc)}
             print(f"\nDiscovery terminated: {type(exc).__name__}: {exc}")
 
         except Exception as exc:
             # Catches AllowlistDenied and any other unexpected errors.
+            final_outcome = {"event": "outcome", "status": type(exc).__name__,
+                             "reason": str(exc)}
             print(f"\nDiscovery terminated with error: {type(exc).__name__}: {exc}")
 
         finally:
@@ -194,9 +215,9 @@ def main() -> None:
     if accumulated_evidence:
         writer.log_all(accumulated_evidence)
 
-    # Append any human actions from the session pause, tagged with event key.
-    for entry in session.evidence:
-        writer.log({"event": "human_action", **entry})
+    # Write the final outcome record (success / DiscoveryStuck / DiscoveryTimeout / …).
+    if final_outcome:
+        writer.log(final_outcome)
 
     print(f"\nEvidence → {writer.path}")
 
